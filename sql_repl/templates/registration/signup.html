@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sign Up - SQL REPL</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f8f9fa; }
+        .auth-container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 350px; }
+        input { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 100%; padding: 10px; background: #0984e3; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 15px; }
+        h2 { margin-top: 0; color: #2d3436; text-align: center; }
+        .helptext { font-size: 0.8rem; color: #636e72; display: block; margin-bottom: 10px; }
+        ul { padding-left: 20px; font-size: 0.8rem; color: #d63031; }
+        .links { margin-top: 15px; text-align: center; font-size: 0.9rem; }
+        a { color: #00b894; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <h2>Create Account</h2>
+        <form method="post">
+            {% csrf_token %}
+            {% for field in form %}
+                <p>
+                    {{ field.label_tag }}<br>
+                    {{ field }}
+                    {% if field.help_text %}
+                        <small class="helptext">{{ field.help_text|safe }}</small>
+                    {% endif %}
+                    {% for error in field.errors %}
+                        <p style="color: red; font-size: 0.8rem;">{{ error }}</p>
+                    {% endfor %}
+                </p>
+            {% endfor %}
+            <button type="submit">Sign Up</button>
+        </form>
+        <div class="links">
+            <p>Already have an account? <a href="{% url 'login' %}">Log in</a></p>
+            <p><a href="{% url 'index' %}">Back to Playground</a></p>
+        </div>
+    </div>
+</body>
+</html>
