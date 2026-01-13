@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SQL REPL</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <style>
+        .CodeMirror { height: 200px; border: 1px solid #ccc; font-size: 16px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f4f4f4; }
+    </style>
+</head>
+<body>
+    <h1>SQL REPL</h1>
+    
+    <form method="POST" id="sqlForm">
+        {% csrf_token %}
+        <textarea id="editor" name="query">{{ query }}</textarea>
+        <button type="submit" style="margin-top: 10px; padding: 10px 20px;">Run Query</button>
+    </form>
+
+    {% if error %}<p style="color: red;">Error: {{ error }}</p>{% endif %}
+
+    {% if results %}
+    <table>
+        <thead>
+            <tr>{% for col in columns %}<th>{{ col }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+            {% for row in results %}
+            <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/sql/sql.min.js"></script>
+    
+    <script>
+        var editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
+            mode: "text/x-sql",
+            theme: "dracula",
+            lineNumbers: true,
+        });
+
+        // GUEST FEATURE: Save to LocalStorage
+        document.getElementById('sqlForm').onsubmit = function() {
+            localStorage.setItem('last_query', editor.getValue());
+        };
+
+        window.onload = function() {
+            if (!editor.getValue() && localStorage.getItem('last_query')) {
+                editor.setValue(localStorage.getItem('last_query'));
+            }
+        };
+    </script>
+</body>
+</html>
