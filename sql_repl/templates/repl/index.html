@@ -15,12 +15,25 @@
         
         /* Sidebar Styling */
         .sidebar { width: 300px; background: #ffffff; border-right: 1px solid #dee2e6; display: flex; flex-direction: column; }
-        .sidebar-header { padding: 1rem; border-bottom: 1px solid #eee; background: #f1f3f5; font-weight: bold; }
-        .history-list { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
+        .sidebar-tabs { display: flex; border-bottom: 1px solid #dee2e6; }
+        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; background: #f1f3f5; border: none; font-weight: 600; color: #636e72; }
+        .tab.active { background: white; border-bottom: 2px solid #00b894; color: #2d3436; }
+        
+        .sidebar-content { flex: 1; overflow-y: auto; display: none; }
+        .sidebar-content.active { display: block; }
+        
+        .history-list, .schema-list { list-style: none; margin: 0; padding: 0; }
         .history-item { padding: 12px 15px; border-bottom: 1px solid #f1f1f1; cursor: pointer; transition: background 0.2s; }
         .history-item:hover { background: #f8f9fa; }
         .history-item small { color: #636e72; display: block; margin-bottom: 4px; font-size: 0.75rem; }
         .history-item code { color: #0984e3; font-family: monospace; font-size: 0.85rem; word-break: break-all; }
+
+        /* Schema Styles */
+        .schema-table { margin-bottom: 10px; border-bottom: 1px solid #eee; }
+        .schema-table-name { padding: 10px 15px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
+        .schema-table-name:hover { background: #f0f0f0; }
+        .schema-columns { padding: 5px 15px 15px; display: none; }
+        .schema-columns li { font-size: 0.85rem; color: #555; list-style: circle; margin-left: 20px; margin-top: 4px; font-family: monospace; }
 
         /* Editor & Results Area */
         .content { flex: 1; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; }
@@ -40,6 +53,7 @@
         td { padding: 12px; border-bottom: 1px solid #eee; color: #2d3436; }
         tr:last-child td { border-bottom: none; }
         .error-msg { background: #ff7675; color: white; padding: 15px; border-radius: 4px; margin-top: 10px; }
+        .no-rows { color: #636e72; text-align: center; font-style: italic; background: #fafafa; }
     </style>
 </head>
 <body>
@@ -49,39 +63,50 @@
         <div>
             {% if user.is_authenticated %}
                 <span>Welcome, <strong>{{ user.username }}</strong></span> | 
-                <!-- Explicitly pointing to /accounts/logout/ to match core/urls.py -->
                 <form action="/accounts/logout/" method="post" style="display:inline;">
                     {% csrf_token %}
                     <button type="submit" style="background:none; border:none; color:#ff7675; cursor:pointer; font-weight:bold;">Logout</button>
                 </form>
             {% else %}
-                <!-- Explicitly pointing to /accounts/login/ to avoid 404s at /login/ -->
-                <a href="/accounts/login/">Login to save queries</a>
+                <a href="/accounts/login/">Login</a> or 
+                <a href="{% url 'signup' %}">Sign Up</a>
             {% endif %}
         </div>
     </nav>
 
     <div class="main-container">
-        <!-- Sidebar for History -->
+        <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header">Query History</div>
-            <ul class="history-list">
-                {% if user.is_authenticated %}
-                    {% for item in history %}
-                    <li class="history-item" onclick="loadQuery(`{{ item.code|escapejs }}`)">
-                        <small>{{ item.created_at|date:"M d, Y H:i" }}</small>
-                        <code>{{ item.code|truncatechars:60 }}</code>
-                    </li>
-                    {% empty %}
-                    <li class="history-item"><small>No saved queries yet.</small></li>
-                    {% endfor %}
-                {% else %}
-                    <li class="history-item">
-                        <small>Guest Mode</small>
-                        <p style="font-size: 0.8rem; color: #636e72;">Log in to persist your queries across sessions.</p>
-                    </li>
-                {% endif %}
-            </ul>
+            <div class="sidebar-tabs">
+                <button class="tab active" onclick="switchTab(event, 'history')">History</button>
+                <button class="tab" onclick="switchTab(event, 'schema')">Tables</button>
+            </div>
+            
+            <!-- History Tab -->
+            <div id="tab-history" class="sidebar-content active">
+                <ul class="history-list">
+                    {% if user.is_authenticated %}
+                        {% for item in history %}
+                        <li class="history-item" onclick="loadQuery(`{{ item.code|escapejs }}`)">
+                            <small>{{ item.created_at|date:"M d, Y H:i" }}</small>
+                            <code>{{ item.code|truncatechars:60 }}</code>
+                        </li>
+                        {% empty %}
+                        <li class="history-item" style="padding:15px; color:#999;"><small>No saved queries yet.</small></li>
+                        {% endfor %}
+                    {% else %}
+                        <li class="history-item">
+                            <small>Guest Mode</small>
+                            <p style="font-size: 0.8rem; color: #636e72;">Log in to persist your queries across sessions.</p>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <!-- Schema Tab (Populated via JS) -->
+            <div id="tab-schema" class="sidebar-content">
+                <div id="schema-container">Loading tables...</div>
+            </div>
         </div>
 
         <!-- Main Workspace -->
@@ -100,8 +125,11 @@
             {% if error %}
                 <div class="error-msg"><strong>Error:</strong> {{ error }}</div>
             {% endif %}
+SELECT COUNT(*) AS TotalSales
+FROM Sales;
 
-            {% if results %}
+            <!-- UPDATED: Check for 'columns' instead of 'results' so empty tables still show headers -->
+            {% if columns %}
             <div class="results-container">
                 <table>
                     <thead>
@@ -110,6 +138,10 @@
                     <tbody>
                         {% for row in results %}
                         <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="{{ columns|length }}" class="no-rows">Query executed successfully. No rows returned.</td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -132,22 +164,86 @@
             autofocus: true
         });
 
-        // Helper: Load history into editor
+        // 1. Load History
         function loadQuery(code) {
             editor.setValue(code);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // GUEST FEATURE: Save to LocalStorage
+        // 2. Tab Switching
+        function switchTab(evt, tabName) {
+            // Update buttons
+            document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+            if (evt && evt.currentTarget) {
+                evt.currentTarget.classList.add('active');
+            }
+            
+            // Update content
+            document.querySelectorAll('.sidebar-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+        }
+
+        // 3. Toggle Schema Accordion
+        function toggleSchema(element) {
+            const content = element.nextElementSibling;
+            if (content.style.display === 'block') {
+                content.style.display = 'none';
+            } else {
+                content.style.display = 'block';
+            }
+        }
+
+        // 4. Fetch Schema Data
+        function fetchSchema() {
+            // Uses the URL name 'schema_data' defined in urls.py
+            fetch("{% url 'schema_data' %}")
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("Schema data received:", data); 
+                    const container = document.getElementById('schema-container');
+                    
+                    if (!data.tables || data.tables.length === 0) {
+                        container.innerHTML = '<p style="padding:15px; color:#999; font-size:0.9rem;">No tables found.</p>';
+                        return;
+                    }
+
+                    let html = '';
+                    data.tables.forEach(table => {
+                        const cols = table.columns || [];
+                        html += `
+                            <div class="schema-table">
+                                <div class="schema-table-name" onclick="toggleSchema(this)">
+                                    <span>📄 ${table.name}</span>
+                                    <span style="font-size:0.8rem;">▼</span>
+                                </div>
+                                <ul class="schema-columns">
+                                    ${cols.map(col => `<li>${col}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                })
+                .catch(err => {
+                    console.error("Failed to load schema", err);
+                    document.getElementById('schema-container').innerHTML = "<p style='padding:15px; color:red;'>Error loading tables.</p>";
+                });
+        }
+
+        // Guest Save
         document.getElementById('sqlForm').onsubmit = function() {
             localStorage.setItem('guest_last_query', editor.getValue());
         };
 
         window.onload = function() {
-            // Priority: 1. Current query in context, 2. LocalStorage for guests
             if (!editor.getValue() && localStorage.getItem('guest_last_query')) {
                 editor.setValue(localStorage.getItem('guest_last_query'));
             }
+            // Load schema immediately
+            fetchSchema();
         };
     </script>
 </body>
