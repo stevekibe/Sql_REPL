@@ -43,6 +43,7 @@
         .controls { margin: 15px 0; display: flex; gap: 10px; }
         .btn { padding: 10px 25px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }
         .btn-run { background: #00b894; color: white; }
+        .btn-pretty { background: #0984e3; color: white; }
         .btn-clear { background: #636e72; color: white; }
         .btn:hover { opacity: 0.9; }
 
@@ -118,15 +119,16 @@
                 </div>
                 <div class="controls">
                     <button type="submit" class="btn btn-run">Execute SQL</button>
-                    <button type="button" class="btn btn-clear" onclick="editor.setValue('')">Clear</button>
+                    <!-- Added Prettify Button -->
+                    <button type="button" class="btn btn-pretty" onclick="formatQuery()">Prettify</button>
+                    <!-- Fixed Clear Button -->
+                    <button type="button" class="btn btn-clear" onclick="clearQuery()">Clear</button>
                 </div>
             </form>
 
             {% if error %}
                 <div class="error-msg"><strong>Error:</strong> {{ error }}</div>
             {% endif %}
-SELECT COUNT(*) AS TotalSales
-FROM Sales;
 
             <!-- UPDATED: Check for 'columns' instead of 'results' so empty tables still show headers -->
             {% if columns %}
@@ -153,6 +155,9 @@ FROM Sales;
     <!-- CodeMirror JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/sql/sql.min.js"></script>
+    
+    <!-- SQL Formatter Lib -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql-formatter/4.0.2/sql-formatter.min.js"></script>
     
     <script>
         var editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
@@ -231,6 +236,28 @@ FROM Sales;
                     console.error("Failed to load schema", err);
                     document.getElementById('schema-container').innerHTML = "<p style='padding:15px; color:red;'>Error loading tables.</p>";
                 });
+        }
+        
+        // 5. Editor Tools
+        function clearQuery() {
+            editor.setValue('');
+            editor.focus();
+        }
+
+        function formatQuery() {
+            const raw = editor.getValue();
+            if(!raw) return;
+            try {
+                // Check if sqlFormatter is loaded
+                if (window.sqlFormatter) {
+                    const formatted = sqlFormatter.format(raw, { language: 'sql' });
+                    editor.setValue(formatted);
+                } else {
+                    alert("Formatter library not loaded yet.");
+                }
+            } catch (e) {
+                console.error("Format error:", e);
+            }
         }
 
         // Guest Save
