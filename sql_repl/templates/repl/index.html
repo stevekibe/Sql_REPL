@@ -98,7 +98,7 @@
                     {% else %}
                         <li class="history-item">
                             <small>Guest Mode</small>
-                            <p style="font-size: 0.8rem; color: #636e72;">Log in to persist your queries across sessions.</p>
+                            <p style="padding: 10px; font-size: 0.8rem; color: #636e72;">Queries are reset on refresh.</p>
                         </li>
                     {% endif %}
                 </ul>
@@ -112,43 +112,21 @@
 
         <!-- Main Workspace -->
         <div class="content">
-            <form method="POST" id="sqlForm">
+            <form id="sqlForm">
                 {% csrf_token %}
                 <div class="editor-container">
                     <textarea id="editor" name="query">{{ query }}</textarea>
                 </div>
                 <div class="controls">
                     <button type="submit" class="btn btn-run">Execute SQL</button>
-                    <!-- Added Prettify Button -->
                     <button type="button" class="btn btn-pretty" onclick="formatQuery()">Prettify</button>
-                    <!-- Fixed Clear Button -->
                     <button type="button" class="btn btn-clear" onclick="clearQuery()">Clear</button>
                 </div>
             </form>
 
-            {% if error %}
-                <div class="error-msg"><strong>Error:</strong> {{ error }}</div>
-            {% endif %}
-
-            <!-- UPDATED: Check for 'columns' instead of 'results' so empty tables still show headers -->
-            {% if columns %}
-            <div class="results-container">
-                <table>
-                    <thead>
-                        <tr>{% for col in columns %}<th>{{ col }}</th>{% endfor %}</tr>
-                    </thead>
-                    <tbody>
-                        {% for row in results %}
-                        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="{{ columns|length }}" class="no-rows">Query executed successfully. No rows returned.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div id="output-area">
+                <!-- Results will be injected here via AJAX -->
             </div>
-            {% endif %}
         </div>
     </div>
 
@@ -160,6 +138,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql-formatter/4.0.2/sql-formatter.min.js"></script>
     
     <script>
+        // Initialize Editor
         var editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
             mode: "text/x-sql",
             theme: "dracula",
@@ -169,52 +148,123 @@
             autofocus: true
         });
 
-        // 1. Load History
         function loadQuery(code) {
             editor.setValue(code);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // 2. Tab Switching
+        // Tab Switching Logic
         function switchTab(evt, tabName) {
-            // Update buttons
             document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
             if (evt && evt.currentTarget) {
                 evt.currentTarget.classList.add('active');
             }
-            
-            // Update content
             document.querySelectorAll('.sidebar-content').forEach(c => c.classList.remove('active'));
             document.getElementById('tab-' + tabName).classList.add('active');
         }
 
-        // 3. Toggle Schema Accordion
         function toggleSchema(element) {
             const content = element.nextElementSibling;
-            if (content.style.display === 'block') {
-                content.style.display = 'none';
-            } else {
-                content.style.display = 'block';
-            }
+            content.style.display = content.style.display === 'block' ? 'none' : 'block';
         }
 
-        // 4. Fetch Schema Data
-        function fetchSchema() {
-            // Uses the URL name 'schema_data' defined in urls.py
-            fetch("{% url 'schema_data' %}")
-                .then(response => {
-                    if (!response.ok) throw new Error('Network response was not ok');
-                    return response.json();
-                })
-                .then(data => {
-                    console.log("Schema data received:", data); 
-                    const container = document.getElementById('schema-container');
+        // --- AJAX EXECUTION LOGIC ---
+        document.getElementById('sqlForm').onsubmit = function(e) {
+            e.preventDefault(); // Stop the page refresh!
+            
+            const query = editor.getValue();
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            const outputArea = document.getElementById('output-area');
+
+            // Show loading state
+            outputArea.innerHTML = '<p style="color:#666; padding:10px;">Executing...</p>';
+
+            fetch('', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest', // Marks as AJAX for Django
+                    'X-CSRFToken': csrfToken
+                },
+                body: new URLSearchParams({ query: query })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'error') {
+                    outputArea.innerHTML = `<div class="error-msg"><strong>Error:</strong> ${data.error}</div>`;
+                } else {
+                    // Success - Build the table dynamically
+                    let html = '';
+                    if (data.columns && data.columns.length > 0) {
+                        html += '<div class="results-container"><table><thead><tr>';
+                        data.columns.forEach(col => {
+                            html += `<th>${col}</th>`;
+                        });
+                        html += '</tr></thead><tbody>';
+                        
+                        if (data.results.length === 0) {
+                             html += `<tr><td colspan="${data.columns.length}" class="no-rows">Query executed successfully. No rows returned.</td></tr>`;
+                        } else {
+                            data.results.forEach(row => {
+                                html += '<tr>';
+                                row.forEach(cell => {
+                                    html += `<td>${cell}</td>`;
+                                });
+                                html += '</tr>';
+                            });
+                        }
+                        html += '</tbody></table></div>';
+                    } else {
+                         // No columns usually means a CREATE/INSERT/UPDATE/DELETE query
+                         html += '<div class="results-container" style="padding:15px; color:#2d3436;">Query executed successfully.</div>';
+                    }
+                    outputArea.innerHTML = html;
                     
+                    // Refresh Sidebar to show new tables immediately
+                    fetchSchema();
+
+                    // NEW: Dynamically update History Sidebar if we received a new history item
+                    if (data.new_history) {
+                        const historyList = document.querySelector('.history-list');
+                        if (historyList) {
+                            // Remove "No saved queries" placeholder if it exists
+                            const emptyItem = historyList.querySelector('li[style*="color:#999"]');
+                            if (emptyItem) emptyItem.remove();
+
+                            const newItem = document.createElement('li');
+                            newItem.className = 'history-item';
+                            // Note: raw_code comes from the updated views.py JSON response
+                            newItem.onclick = function() { loadQuery(data.new_history.raw_code); };
+                            
+                            const small = document.createElement('small');
+                            small.textContent = data.new_history.timestamp;
+                            
+                            const code = document.createElement('code');
+                            code.textContent = data.new_history.code_preview;
+                            
+                            newItem.appendChild(small);
+                            newItem.appendChild(code);
+                            
+                            historyList.insertBefore(newItem, historyList.firstChild);
+                        }
+                    }
+                }
+            })
+            .catch(error => {
+                outputArea.innerHTML = `<div class="error-msg"><strong>Network Error:</strong> ${error}</div>`;
+            });
+        };
+
+        function fetchSchema() {
+            // Added timestamp to prevent caching
+            fetch("{% url 'schema_data' %}?t=" + new Date().getTime())
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('schema-container');
                     if (!data.tables || data.tables.length === 0) {
                         container.innerHTML = '<p style="padding:15px; color:#999; font-size:0.9rem;">No tables found.</p>';
                         return;
                     }
-
                     let html = '';
                     data.tables.forEach(table => {
                         const cols = table.columns || [];
@@ -233,12 +283,11 @@
                     container.innerHTML = html;
                 })
                 .catch(err => {
-                    console.error("Failed to load schema", err);
+                    console.error("Schema load error:", err);
                     document.getElementById('schema-container').innerHTML = "<p style='padding:15px; color:red;'>Error loading tables.</p>";
                 });
         }
         
-        // 5. Editor Tools
         function clearQuery() {
             editor.setValue('');
             editor.focus();
@@ -247,29 +296,13 @@
         function formatQuery() {
             const raw = editor.getValue();
             if(!raw) return;
-            try {
-                // Check if sqlFormatter is loaded
-                if (window.sqlFormatter) {
-                    const formatted = sqlFormatter.format(raw, { language: 'sql' });
-                    editor.setValue(formatted);
-                } else {
-                    alert("Formatter library not loaded yet.");
-                }
-            } catch (e) {
-                console.error("Format error:", e);
+            if (window.sqlFormatter) {
+                const formatted = sqlFormatter.format(raw, { language: 'sql' });
+                editor.setValue(formatted);
             }
         }
 
-        // Guest Save
-        document.getElementById('sqlForm').onsubmit = function() {
-            localStorage.setItem('guest_last_query', editor.getValue());
-        };
-
         window.onload = function() {
-            if (!editor.getValue() && localStorage.getItem('guest_last_query')) {
-                editor.setValue(localStorage.getItem('guest_last_query'));
-            }
-            // Load schema immediately
             fetchSchema();
         };
     </script>
