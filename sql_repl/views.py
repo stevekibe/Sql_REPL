@@ -1,6 +1,7 @@
 import re
 import json
 import os
+import csv
 import sqlite3
 from datetime import datetime
 from django.shortcuts import render, redirect
@@ -8,7 +9,7 @@ from django.conf import settings
 from .models import UserQuery
 from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 
 # Helper to get the isolated database path for the current user/guest
 def get_user_db_path(request):
@@ -157,3 +158,45 @@ def schema_data(request):
             conn.close()
 
     return JsonResponse({'tables': tables_structure})
+
+def download_csv(request):
+    """
+    Executes the query and returns the results as a CSV file attachment.
+    """
+    if request.method == "POST":
+        query = request.POST.get('query', '')
+        
+        db_path = get_user_db_path(request)
+        if not os.path.exists(db_path):
+            return HttpResponse("No database session found.", status=404)
+
+        conn = None
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute(query)
+            
+            if not cursor.description:
+                 return HttpResponse("Query does not return data to export.", status=400)
+
+            # Create the CSV response
+            response = HttpResponse(
+                content_type='text/csv',
+                headers={'Content-Disposition': 'attachment; filename="query_results.csv"'},
+            )
+
+            writer = csv.writer(response)
+            # Write Headers
+            writer.writerow([col[0] for col in cursor.description])
+            # Write Data
+            writer.writerows(cursor.fetchall())
+
+            return response
+
+        except Exception as e:
+            return HttpResponse(f"Error generating CSV: {str(e)}", status=400)
+        finally:
+            if conn:
+                conn.close()
+    
+    return redirect('index')

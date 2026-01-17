@@ -45,6 +45,7 @@
         .btn-run { background: #00b894; color: white; }
         .btn-pretty { background: #0984e3; color: white; }
         .btn-clear { background: #636e72; color: white; }
+        .btn-export { background: #2d3436; color: white; }
         .btn:hover { opacity: 0.9; }
 
         /* Data Table */
@@ -120,6 +121,8 @@
                 <div class="controls">
                     <button type="submit" class="btn btn-run">Execute SQL</button>
                     <button type="button" class="btn btn-pretty" onclick="formatQuery()">Prettify</button>
+                    <!-- Export CSV Button connects to download_csv view -->
+                    <button type="button" class="btn btn-export" onclick="downloadCSV()">Export CSV</button>
                     <button type="button" class="btn btn-clear" onclick="clearQuery()">Clear</button>
                 </div>
             </form>
@@ -300,6 +303,36 @@
                 const formatted = sqlFormatter.format(raw, { language: 'sql' });
                 editor.setValue(formatted);
             }
+        }
+        
+        // CSV Download Logic triggers the 'download_csv' URL
+        function downloadCSV() {
+            const query = editor.getValue();
+            if (!query) {
+                alert("Please enter a query to export.");
+                return;
+            }
+            
+            // Create a temporary form to submit the query for download
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = "{% url 'download_csv' %}";
+            
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrfmiddlewaretoken';
+            csrfInput.value = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            form.appendChild(csrfInput);
+            
+            const queryInput = document.createElement('input');
+            queryInput.type = 'hidden';
+            queryInput.name = 'query';
+            queryInput.value = query;
+            form.appendChild(queryInput);
+            
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
         }
 
         window.onload = function() {
